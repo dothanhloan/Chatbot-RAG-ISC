@@ -1,0 +1,12 @@
+# 1. Bỏ qua thư mục môi trường ảo (Thủ phạm gây lỗi "quá nhiều file")
+api_env/
+venv/
+env/
+
+# 2. Bỏ qua file chứa API Key (Để bảo mật, không lộ khóa lên mạng)
+.env
+
+# 3. Bỏ qua các file rác hệ thống Python sinh ra khi chạy
+__pycache__/
+*.pyc
+*.pyo
