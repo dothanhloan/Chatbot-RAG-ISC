@@ -8,3 +8,4 @@ python-docx
 python-dotenv
 huggingface-hub
 sentence-transformers
+docx2txt
