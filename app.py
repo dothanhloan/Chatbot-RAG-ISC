@@ -1,25 +1,5 @@
 import streamlit as st
 import os
-
-# --- 1. CẤU HÌNH API KEY (QUAN TRỌNG NHẤT) ---
-# Đoạn này giúp tự động lấy Key từ "Secrets" (nếu trên Web) hoặc ".env" (nếu dưới máy)
-if "GROQ_API_KEY" in st.secrets:
-    # Nếu chạy trên Streamlit Cloud -> Lấy từ Secrets
-    os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
-else:
-    # Nếu chạy dưới máy Local -> Lấy từ file .env
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
-
-# Kiểm tra lần cuối, nếu vẫn không có Key thì dừng lại báo lỗi
-if not os.environ.get("GROQ_API_KEY"):
-    st.error("❌ Lỗi: Chưa tìm thấy GROQ_API_KEY! Hãy cấu hình trong file .env (Local) hoặc mục Secrets (Cloud).")
-    st.stop()
-
-# --- 2. IMPORT THƯ VIỆN ---
 from langchain_community.document_loaders import Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
@@ -27,92 +7,104 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
-# --- 3. CẤU HÌNH TRANG WEB ---
-st.set_page_config(page_title="ICS Chatbot", page_icon="🛡️")
-st.title("🛡️ Trợ lý ảo ICS Security")
-st.markdown("Hỏi đáp về giải pháp bảo mật **VietGuard**, **AI SOC** và tiêu chuẩn **ISO 27001** của ICS.")
+# --- 1. CẤU HÌNH TRANG WEB ---
+st.set_page_config(
+    page_title="ICS Security Assistant",
+    page_icon="🛡️",
+    layout="wide"  # Chế độ xem rộng
+)
 
-# --- 4. HÀM NẠP DỮ LIỆU (CACHE ĐỂ KHÔNG PHẢI LOAD LẠI) ---
+# --- 2. TÙY CHỈNH GIAO DIỆN (CSS) ---
+st.markdown("""
+<style>
+    h1 { color: #004d99; text-align: center; }
+    .stChatMessage.st-emotion-cache-1c7y2kd { background-color: #f0f2f6; }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+# --- 3. XỬ LÝ API KEY TỰ ĐỘNG ---
+if "GROQ_API_KEY" in st.secrets:
+    os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+else:
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+if not os.environ.get("GROQ_API_KEY"):
+    st.error("❌ Lỗi: Chưa có API Key. Vui lòng kiểm tra cấu hình!")
+    st.stop()
+
+# --- 4. THANH BÊN (SIDEBAR) - THÔNG TIN ICS ---
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/9676/9676572.png", width=100)
+    st.title("ICS Security")
+    st.markdown("---")
+    st.info("""
+    🏢 **Thành lập:** 03/2020
+    🏆 **Tiêu chuẩn:** ISO 27001
+    🚀 **Sản phẩm:** VietGuard, AI SOC
+    """)
+    st.markdown("---")
+    st.link_button("🌐 Website: icss.com.vn", "https://icss.com.vn")
+    st.caption("© 2024 ICS Security")
+
+# --- 5. NẠP DỮ LIỆU ---
 @st.cache_resource
-def load_and_process_data():
-    # Kiểm tra xem file có tồn tại không. 
-    # Lưu ý: Theo cấu trúc GitHub của bạn [1], file có thể nằm trong thư mục 'data/' hoặc cùng cấp.
-    # Code này sẽ thử tìm cả 2 nơi.
-    file_path = "input.docx"
-    if not os.path.exists(file_path):
-        file_path = "data/input.docx" # Thử tìm trong thư mục data
-        if not os.path.exists(file_path):
-            return None
+def load_data():
+    # Tìm file input.docx trong thư mục
+    possible_paths = ["input.docx", "data/input.docx"]
+    file_path = next((p for p in possible_paths if os.path.exists(p)), None)
+    
+    if not file_path:
+        return None
 
-    # Đọc tài liệu
     loader = Docx2txtLoader(file_path)
     docs = loader.load()
-    
-    # Cắt nhỏ văn bản để AI dễ đọc
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(docs)
-    
-    # Tạo Vector Database (Bộ nhớ)
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    vectorstore = FAISS.from_documents(chunks, embeddings)
-    return vectorstore
+    return FAISS.from_documents(chunks, embeddings)
 
-# --- 5. KHỞI TẠO HỆ THỐNG ---
-with st.spinner("Đang khởi động hệ thống tri thức ICS..."):
-    vectorstore = load_and_process_data()
+vectorstore = load_data()
+
+# --- 6. GIAO DIỆN CHAT CHÍNH ---
+st.title("🛡️ Trợ lý Ảo An ninh Mạng ICS")
+st.markdown("<p style='text-align: center;'>Hỗ trợ thông tin về <b>VietGuard</b>, <b>AI SOC</b> và chính sách bảo mật.</p>", unsafe_allow_html=True)
 
 if vectorstore is None:
-    st.error("⚠️ Không tìm thấy file 'input.docx'. Vui lòng kiểm tra lại thư mục dự án!")
+    st.warning("⚠️ Chưa tìm thấy file dữ liệu input.docx!")
 else:
-    # Cấu hình "Bộ não" AI (Llama 3 trên Groq)
     llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.3)
-    
-    # Tạo khuôn mẫu câu trả lời chuyên nghiệp
-    template = """
-    Bạn là trợ lý AI chuyên nghiệp của Công ty Cổ phần An ninh Mạng Quốc tế (ICS).
-    Sử dụng thông tin ngữ cảnh dưới đây để trả lời câu hỏi của khách hàng.
-    Nếu thông tin không có trong ngữ cảnh, hãy nói là bạn chưa rõ, đừng bịa đặt.
-    
-    NGỮ CẢNH (Thông tin nội bộ ICS):
+    template = """Bạn là trợ lý AI của công ty ICS. Dựa vào ngữ cảnh sau:
     {context}
     
-    CÂU HỎI:
-    {question}
-    """
+    Hãy trả lời câu hỏi: {question}
+    Trả lời ngắn gọn, chuyên nghiệp và thân thiện."""
     prompt = ChatPromptTemplate.from_template(template)
 
-    # --- 6. GIAO DIỆN CHAT ---
     if "messages" not in st.session_state:
-        st.session_state.messages = []
+        st.session_state.messages = [{"role": "assistant", "content": "Chào bạn! Tôi có thể giúp gì về các giải pháp của ICS?"}]
 
-    # Hiển thị lịch sử chat
     for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
+        icon = "🛡️" if msg["role"] == "assistant" else "👤"
+        with st.chat_message(msg["role"], avatar=icon):
             st.markdown(msg["content"])
 
-    # Xử lý khi người dùng nhập câu hỏi
-    if question := st.chat_input("Nhập câu hỏi về ICS (VD: VietGuard là gì?)..."):
-        # Hiện câu hỏi người dùng
+    if question := st.chat_input("Nhập câu hỏi tại đây..."):
         st.session_state.messages.append({"role": "user", "content": question})
-        with st.chat_message("user"):
+        with st.chat_message("user", avatar="👤"):
             st.markdown(question)
-
-        # AI suy nghĩ và trả lời
-        with st.chat_message("assistant"):
-            with st.spinner("Đang tra cứu dữ liệu..."):
-                try:
-                    # 1. Tìm kiếm thông tin liên quan trong input.docx
-                    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-                    relevant_docs = retriever.invoke(question)
-                    context_text = "\n\n".join([d.page_content for d in relevant_docs])
-                    
-                    # 2. Gửi cho AI tổng hợp
-                    chain = prompt | llm
-                    response = chain.invoke({"context": context_text, "question": question})
-                    
-                    st.markdown(response.content)
-                    
-                    # Lưu câu trả lời
-                    st.session_state.messages.append({"role": "assistant", "content": response.content})
-                except Exception as e:
-                    st.error(f"Đã xảy ra lỗi: {str(e)}")
+        
+        with st.chat_message("assistant", avatar="🛡️"):
+            with st.spinner("Đang tra cứu hệ thống..."):
+                retriever = vectorstore.as_retriever()
+                relevant = retriever.invoke(question)
+                ctx = "\n".join([d.page_content for d in relevant])
+                chain = prompt | llm
+                res = chain.invoke({"context": ctx, "question": question})
+                st.markdown(res.content)
+        st.session_state.messages.append({"role": "assistant", "content": res.content})
